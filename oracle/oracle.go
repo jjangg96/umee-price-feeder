@@ -257,7 +257,49 @@ func (o *Oracle) SetPrices(ctx context.Context) error {
 
 	for cp := range requiredRates {
 		if _, ok := computedPrices[cp]; !ok {
-			o.logger.Error().Str("asset", cp.String()).Msg("unable to report price for expected asset")
+			// Check if we have any related data for this asset
+			o.logger.Error().
+				Str("asset", cp.String()).
+				Int("total_computed_prices", len(computedPrices)).
+				Msg("unable to report price for expected asset")
+			
+			// Special handling for stDYDXUSD fallback
+			if cp.String() == "stDYDXUSD" {
+				// Try to use previous stDYDXUSD price as fallback
+				previousPrices := o.GetPrices()
+				if previousStDYDXUSD, exists := previousPrices[types.CurrencyPair{Base: "stDYDX", Quote: "USD"}]; exists {
+					// Add the previous price to computedPrices
+					computedPrices[types.CurrencyPair{Base: "stDYDX", Quote: "USD"}] = previousStDYDXUSD
+					o.logger.Info().
+						Str("fallback_price", previousStDYDXUSD.String()).
+						Msg("Using previous stDYDXUSD price as fallback")
+				} else {
+					// Try to fetch stDYDXUSD from blockchain
+					blockchainStDYDXUSD, err := o.oracleClient.GetExchangeRate(ctx, "stDYDXUSD")
+					if err != nil {
+						// Try alternative denom names
+						alternativeDenoms := []string{"stDYDX", "STDYDX", "stDYDXUSD", "STDYDXUSD"}
+						for _, denom := range alternativeDenoms {
+							altRate, altErr := o.oracleClient.GetExchangeRate(ctx, denom)
+							if altErr == nil {
+								// Add the blockchain price to computedPrices
+								computedPrices[types.CurrencyPair{Base: "stDYDX", Quote: "USD"}] = altRate
+								o.logger.Info().
+									Str("alternative_denom", denom).
+									Str("blockchain_fallback_price", altRate.String()).
+									Msg("Using alternative denom from blockchain as fallback")
+								break
+							}
+						}
+					} else {
+						// Add the blockchain price to computedPrices
+						computedPrices[types.CurrencyPair{Base: "stDYDX", Quote: "USD"}] = blockchainStDYDXUSD
+						o.logger.Info().
+							Str("blockchain_fallback_price", blockchainStDYDXUSD.String()).
+							Msg("Using stDYDXUSD from blockchain as fallback")
+					}
+				}
+			}
 		}
 	}
 

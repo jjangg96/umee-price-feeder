@@ -24,6 +24,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	oracletypes "github.com/umee-network/umee/v6/x/oracle/types"
 )
 
 type (
@@ -299,4 +300,42 @@ func (oc OracleClient) CreateTxFactory(isPrevote bool) (tx.Factory, error) {
 		WithKeybase(clientCtx.Keyring).
 		WithSignMode(signing.SignMode_SIGN_MODE_DIRECT).
 		WithSimulateAndExecute(true), nil
+}
+
+// GetExchangeRates queries the current exchange rates from the blockchain
+func (oc OracleClient) GetExchangeRates(ctx context.Context) (sdk.DecCoins, error) {
+	clientCtx, err := oc.CreateClientContext()
+	if err != nil {
+		return nil, err
+	}
+
+	queryClient := oracletypes.NewQueryClient(clientCtx)
+	res, err := queryClient.ExchangeRates(ctx, &oracletypes.QueryExchangeRates{})
+	if err != nil {
+		return nil, err
+	}
+
+	return res.ExchangeRates, nil
+}
+
+// GetExchangeRate queries a specific exchange rate from the blockchain
+func (oc OracleClient) GetExchangeRate(ctx context.Context, denom string) (sdk.Dec, error) {
+	clientCtx, err := oc.CreateClientContext()
+	if err != nil {
+		return sdk.Dec{}, err
+	}
+
+	queryClient := oracletypes.NewQueryClient(clientCtx)
+	res, err := queryClient.ExchangeRates(ctx, &oracletypes.QueryExchangeRates{
+		Denom: denom,
+	})
+	if err != nil {
+		return sdk.Dec{}, err
+	}
+
+	if len(res.ExchangeRates) == 0 {
+		return sdk.Dec{}, fmt.Errorf("no exchange rate found for denom: %s", denom)
+	}
+
+	return res.ExchangeRates[0].Amount, nil
 }
